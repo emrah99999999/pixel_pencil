@@ -15,7 +15,7 @@ class CanvasWidget extends StatefulWidget {
 class CanvasWidgetState extends State<CanvasWidget> {
   late PixelGrid grid;
   double _pixelSize = 20.0;
-  double _basePixelSize = 20.0; // برای محاسبه‌ی زوم pinch
+  double _basePixelSize = 20.0;
   final GlobalKey _repaintKey = GlobalKey();
 
   @override
@@ -44,6 +44,16 @@ class CanvasWidgetState extends State<CanvasWidget> {
 
   double get pixelSize => _pixelSize;
 
+  /// بارگذاری کامل شبکه از یک PixelGrid (مثلاً از EP)
+  void loadGrid(PixelGrid newGrid) {
+    setState(() {
+      grid = newGrid;
+      // تنظیم زوم بر اساس ابعاد (اختیاری)
+    });
+  }
+
+  String get tag => grid.tag;
+
   Future<ui.Image> captureImage() async {
     final boundary =
         _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
@@ -53,19 +63,24 @@ class CanvasWidgetState extends State<CanvasWidget> {
     return boundary.toImage(pixelRatio: 1.0);
   }
 
-  // رسم یک پیکسل
+  // رسم به‌صورت معکوس‌کننده (toggle)
+  void _togglePixel(int x, int y) {
+    Color current = grid.getPixel(x, y);
+    Color newColor = (current == Colors.black) ? Colors.white : Colors.black;
+    grid.setPixel(x, y, newColor);
+  }
+
   void _drawAtPosition(Offset localPosition) {
     final int x = (localPosition.dx / _pixelSize).floor();
     final int y = (localPosition.dy / _pixelSize).floor();
 
     if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
       setState(() {
-        grid.setPixel(x, y, Colors.black);
+        _togglePixel(x, y);
       });
     }
   }
 
-  // بزرگ‌نمایی با چرخ ماوس
   void _handleScroll(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
       setState(() {
@@ -75,18 +90,14 @@ class CanvasWidgetState extends State<CanvasWidget> {
     }
   }
 
-  // شروع ژست pinch / pan
   void _onScaleStart(ScaleStartDetails details) {
     _basePixelSize = _pixelSize;
   }
 
-  // به‌روزرسانی ژست (نقاشی یا زوم)
   void _onScaleUpdate(ScaleUpdateDetails details) {
     if (details.pointerCount == 1) {
-      // رسم با یک انگشت / ماوس
       _drawAtPosition(details.localFocalPoint);
     } else {
-      // بزرگ‌نمایی با دو انگشت
       setState(() {
         _pixelSize =
             (_basePixelSize * details.scale).clamp(10.0, 40.0);

@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class ToolbarWidget extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onSave;
+  final VoidCallback onOpen; // جدید
 
   const ToolbarWidget({
     super.key,
     required this.onClear,
     required this.onSave,
+    required this.onOpen,
   });
 
   @override
@@ -18,13 +20,19 @@ class ToolbarWidget extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
+            tooltip: 'باز کردن فایل EP',
+            icon: const Icon(Icons.folder_open, color: Colors.white),
+            onPressed: onOpen,
+          ),
+          const SizedBox(width: 4),
+          IconButton(
             tooltip: 'پاک کردن',
             icon: const Icon(Icons.delete_outline, color: Colors.white),
             onPressed: onClear,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           IconButton(
-            tooltip: 'ذخیره تصویر',
+            tooltip: 'ذخیره تصویر (EP)',
             icon: const Icon(Icons.save_alt, color: Colors.white),
             onPressed: onSave,
           ),
