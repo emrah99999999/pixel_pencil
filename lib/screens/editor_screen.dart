@@ -1,6 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/canvas_widget.dart';
 import '../widgets/toolbar_widget.dart';
@@ -19,20 +22,37 @@ class EditorScreen extends StatelessWidget {
       final ui.Image image = await canvasState.captureImage();
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       if (byteData == null) return;
+      final Uint8List pngBytes = byteData.buffer.asUint8List();
 
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName =
-          'pixel_art_${DateTime.now().millisecondsSinceEpoch}.png';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(byteData.buffer.asUint8List());
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ تصویر ذخیره شد: $fileName'),
-            backgroundColor: Colors.green.shade800,
-          ),
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        // ذخیره در گالری با استفاده از بسته‌ی gal
+        await Gal.putImageBytes(
+          pngBytes,
+          album: 'PixelPencil',
         );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('✅ تصویر در گالری ذخیره شد'),
+              backgroundColor: Colors.green.shade800,
+            ),
+          );
+        }
+      } else {
+        // ذخیره در فایل (دسکتاپ / وب)
+        final dir = await getApplicationDocumentsDirectory();
+        final fileName =
+            'pixel_art_${DateTime.now().millisecondsSinceEpoch}.png';
+        final file = File('${dir.path}/$fileName');
+        await file.writeAsBytes(pngBytes);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ تصویر ذخیره شد: $fileName'),
+              backgroundColor: Colors.green.shade800,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {
@@ -65,12 +85,12 @@ class EditorScreen extends StatelessWidget {
   }
 
   void _changeGridSize(Size size) {
-    _canvasKey.currentState?.setGridSize(size.width.toInt(), size.height.toInt());
+    _canvasKey.currentState
+        ?.setGridSize(size.width.toInt(), size.height.toInt());
   }
 
   @override
   Widget build(BuildContext context) {
-    // برای گرفتن اطلاعات لحظه‌ای از state (با احتیاط)
     final canvasState = _canvasKey.currentState;
 
     return Scaffold(
@@ -84,7 +104,6 @@ class EditorScreen extends StatelessWidget {
             onClear: _clearCanvas,
             onSave: () => _saveImage(context),
           ),
-          // از آنجا که CanvasWidgetState بلافاصله ساخته نمی‌شود، یک Listener ساده استفاده می‌کنیم
           SettingsBar(
             currentPixelSize: canvasState?.pixelSize ?? 20.0,
             gridWidth: canvasState?.grid.width ?? 32,
