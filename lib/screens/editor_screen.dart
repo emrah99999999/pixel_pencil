@@ -2,32 +2,35 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:universal_html/html.dart' as html;
-import '../models/pixel_grid.dart';
+import '../models/ep_pixel_data.dart';
 import '../services/ep_file_service.dart';
 import '../widgets/canvas_widget.dart';
 import '../widgets/toolbar_widget.dart';
 import '../widgets/settings_bar.dart';
-import 'package:flutter/services.dart';
 
-class EditorScreen extends StatelessWidget {
-  EditorScreen({super.key});
+class EditorScreen extends StatefulWidget {
+  const EditorScreen({super.key});
 
+  @override
+  State<EditorScreen> createState() => _EditorScreenState();
+}
+
+class _EditorScreenState extends State<EditorScreen> {
   final GlobalKey<CanvasWidgetState> _canvasKey = GlobalKey();
+  bool _pencilActive = true;
 
-  // ---------- باز کردن فایل EP ----------
-  Future<void> _openEpFile(BuildContext context) async {
+  Future<void> _openEpFile() async {
     try {
       FilePickerResult? result = await FilePicker.pickFiles(
-       type: FileType.any,
-       allowMultiple: false,
-     );
-
+        type: FileType.any,
+        allowMultiple: false,
+      );
       if (result == null || result.files.isEmpty) return;
 
-      // خواندن بایت‌ها
       Uint8List bytes;
       if (kIsWeb) {
         bytes = result.files.first.bytes!;
@@ -36,22 +39,19 @@ class EditorScreen extends StatelessWidget {
         bytes = await file.readAsBytes();
       }
 
-      EpImage epImage = EpFileService.parse(bytes);
-      PixelGrid loadedGrid = PixelGrid();
-      loadedGrid.loadFromEp(epImage.width, epImage.height, epImage.pixels, epImage.tag);
+      EpPixelData epData = EpFileService.parse(bytes);
+      _canvasKey.currentState?.loadData(epData);
 
-      _canvasKey.currentState?.loadGrid(loadedGrid);
-
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ فایل EP "${epImage.tag}" بارگذاری شد'),
+            content: Text('✅ فایل "${epData.tag}" بارگذاری شد'),
             backgroundColor: Colors.green.shade800,
           ),
         );
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ خطا: $e'),
@@ -62,20 +62,17 @@ class EditorScreen extends StatelessWidget {
     }
   }
 
-  // ---------- ذخیره‌سازی فایل EP ----------
-  Future<void> _saveEpFile(BuildContext context) async {
+  Future<void> _saveEpFile() async {
     final canvasState = _canvasKey.currentState;
     if (canvasState == null) return;
 
-    // گرفتن نام فایل از کاربر
-    String? fileName = await _showSaveDialog(context, canvasState.tag);
+    String? fileName = await _showSaveDialog(canvasState.tag);
     if (fileName == null || fileName.isEmpty) return;
 
     try {
-      Uint8List epBytes = EpFileService.write(canvasState.grid, fileName);
+      Uint8List epBytes = EpFileService.write(canvasState.data, fileName);
 
       if (kIsWeb) {
-        // ذخیره در وب (دانلود)
         final blob = html.Blob([epBytes], 'application/octet-stream');
         final url = html.Url.createObjectUrlFromBlob(blob);
         final anchor = html.AnchorElement(href: url)
@@ -83,16 +80,14 @@ class EditorScreen extends StatelessWidget {
           ..click();
         html.Url.revokeObjectUrl(url);
       } else {
-        // دسکتاپ (لینوکس) و اندروید
         String? outputPath = await FilePicker.saveFile(
-         dialogTitle: 'ذخیره فایل EP',
-         fileName: '$fileName.ep',
-         type: FileType.any,
-       );
-
+          dialogTitle: 'ذخیره فایل EP',
+          fileName: '$fileName.ep',
+          type: FileType.any,
+        );
         if (outputPath != null) {
           File(outputPath).writeAsBytesSync(epBytes);
-          if (context.mounted) {
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('✅ فایل $fileName.ep ذخیره شد'),
@@ -103,7 +98,7 @@ class EditorScreen extends StatelessWidget {
         }
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('❌ خطا در ذخیره‌سازی: $e'),
@@ -114,8 +109,7 @@ class EditorScreen extends StatelessWidget {
     }
   }
 
-  // گفتگوی نام (حداکثر ۸ کاراکتر)
-  Future<String?> _showSaveDialog(BuildContext context, String initialTag) async {
+  Future<String?> _showSaveDialog(String initialTag) async {
     TextEditingController controller = TextEditingController(
       text: initialTag.length > 8 ? initialTag.substring(0, 8) : initialTag,
     );
@@ -133,7 +127,6 @@ class EditorScreen extends StatelessWidget {
             hintStyle: TextStyle(color: Colors.white54),
           ),
           inputFormatters: [
-            // فقط حروف و اعداد انگلیسی
             FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
           ],
         ),
@@ -154,22 +147,31 @@ class EditorScreen extends StatelessWidget {
     );
   }
 
+  void _togglePencil() {
+    setState(() {
+      _pencilActive = !_pencilActive;
+      _canvasKey.currentState?.setPencilMode(_pencilActive);
+    });
+  }
+
   void _clearCanvas() {
     _canvasKey.currentState?.clearGrid();
   }
 
   void _zoomIn() {
-    final state = _canvasKey.currentState;
-    if (state != null) {
-      state.setPixelSize(state.pixelSize + 2.0);
-    }
+    _canvasKey.currentState?.setPixelSize(
+      (_canvasKey.currentState?.pixelSize ?? 20.0) + 2.0,
+    );
   }
 
   void _zoomOut() {
-    final state = _canvasKey.currentState;
-    if (state != null) {
-      state.setPixelSize(state.pixelSize - 2.0);
-    }
+    _canvasKey.currentState?.setPixelSize(
+      (_canvasKey.currentState?.pixelSize ?? 20.0) - 2.0,
+    );
+  }
+
+  void _fitToView() {
+    _canvasKey.currentState?.fitToView();
   }
 
   void _changeGridSize(Size size) {
@@ -188,16 +190,21 @@ class EditorScreen extends StatelessWidget {
       body: Column(
         children: [
           ToolbarWidget(
-            onOpen: () => _openEpFile(context),
+            onOpen: _openEpFile,
             onClear: _clearCanvas,
-            onSave: () => _saveEpFile(context),
+            onSave: _saveEpFile,
+            onTogglePencil: _togglePencil,
+            isPencilActive: _pencilActive,
           ),
           SettingsBar(
             currentPixelSize: canvasState?.pixelSize ?? 20.0,
-            gridWidth: canvasState?.grid.width ?? 32,
-            gridHeight: canvasState?.grid.height ?? 32,
+            gridWidth: canvasState?.data.width ?? 32,
+            gridHeight: canvasState?.data.height ?? 32,
+            tag: canvasState?.tag ?? '',
+            fileSize: canvasState?.fileSizeEstimate ?? 0,
             onZoomIn: _zoomIn,
             onZoomOut: _zoomOut,
+            onFit: _fitToView,
             onGridSizeChanged: _changeGridSize,
           ),
           Expanded(

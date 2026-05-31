@@ -2,7 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart';
-import '../models/pixel_grid.dart';
+import '../models/ep_pixel_data.dart';
 import 'pixel_painter.dart';
 
 class CanvasWidget extends StatefulWidget {
@@ -13,70 +13,105 @@ class CanvasWidget extends StatefulWidget {
 }
 
 class CanvasWidgetState extends State<CanvasWidget> {
-  late PixelGrid grid;
+  late EpPixelData pixelData;
   double _pixelSize = 20.0;
   double _basePixelSize = 20.0;
+  Offset _panOffset = Offset.zero;
+  Offset _basePanOffset = Offset.zero;
+  bool _pencilMode = true;
+  BoxConstraints? _lastConstraints;
+  bool _needsFit = false;
+
   final GlobalKey _repaintKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
-    grid = PixelGrid();
+    pixelData = EpPixelData.empty(32, 32);
   }
 
+  // متدهای عمومی
   void clearGrid() {
     setState(() {
-      grid = PixelGrid(width: grid.width, height: grid.height);
+      pixelData = EpPixelData.empty(pixelData.width, pixelData.height);
+      _panOffset = Offset.zero;
+      _needsFit = true;
     });
   }
 
   void setPixelSize(double newSize) {
     setState(() {
-      _pixelSize = newSize.clamp(10.0, 40.0);
+      _pixelSize = newSize.clamp(1.0, 100.0); // دامنه گسترده
     });
   }
 
   void setGridSize(int width, int height) {
     setState(() {
-      grid.resize(width, height);
+      pixelData = pixelData.resized(width, height);
+      _panOffset = Offset.zero;
+      _needsFit = true;
+    });
+  }
+
+  void loadData(EpPixelData newData) {
+    setState(() {
+      pixelData = newData;
+      _panOffset = Offset.zero;
+      _needsFit = true;
+    });
+  }
+
+  /// تنظیم زوم به‌گونه‌ای که کل تصویر در قاب جا شود
+  void fitToView() {
+    if (_lastConstraints == null) return;
+    final availableWidth = _lastConstraints!.maxWidth;
+    final availableHeight = _lastConstraints!.maxHeight;
+    if (availableWidth.isInfinite || availableHeight.isInfinite) return;
+
+    double idealX = availableWidth / pixelData.width;
+    double idealY = availableHeight / pixelData.height;
+    double newSize = (idealX < idealY ? idealX : idealY) * 0.95;
+    newSize = newSize.clamp(1.0, 100.0);
+
+    setState(() {
+      _pixelSize = newSize;
+      _panOffset = Offset.zero;
     });
   }
 
   double get pixelSize => _pixelSize;
-
-  /// بارگذاری کامل شبکه از یک PixelGrid (مثلاً از EP)
-  void loadGrid(PixelGrid newGrid) {
-    setState(() {
-      grid = newGrid;
-      // تنظیم زوم بر اساس ابعاد (اختیاری)
-    });
-  }
-
-  String get tag => grid.tag;
+  String get tag => pixelData.tag;
+  EpPixelData get data => pixelData;
+  int get fileSizeEstimate => 34 + ((pixelData.width + 7) ~/ 8) * pixelData.height;
 
   Future<ui.Image> captureImage() async {
     final boundary =
         _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) {
-      throw Exception('نتوانست boundary را پیدا کند');
-    }
+    if (boundary == null) throw Exception('boundary not found');
     return boundary.toImage(pixelRatio: 1.0);
   }
 
-  // رسم به‌صورت معکوس‌کننده (toggle)
-  void _togglePixel(int x, int y) {
-    Color current = grid.getPixel(x, y);
-    Color newColor = (current == Colors.black) ? Colors.white : Colors.black;
-    grid.setPixel(x, y, newColor);
+  // رویدادها
+  void _onScaleStart(ScaleStartDetails details) {
+    _basePixelSize = _pixelSize;
+    _basePanOffset = _panOffset;
   }
 
-  void _drawAtPosition(Offset localPosition) {
-    final int x = (localPosition.dx / _pixelSize).floor();
-    final int y = (localPosition.dy / _pixelSize).floor();
-
-    if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (_pencilMode && details.pointerCount == 1) {
+      // در حالت مداد، کلیک‌های تکی از طریق onTapUp مدیریت می‌شوند
+      // اینجا کاری نمی‌کنیم تا از حرکت ناخواسته جلوگیری شود
+      return;
+    } else if (!_pencilMode && details.pointerCount == 1) {
+      // جابجایی (Pan)
       setState(() {
-        _togglePixel(x, y);
+        _panOffset = _basePanOffset + details.focalPointDelta;
+      });
+    } else {
+      // زوم (دو انگشت)
+      setState(() {
+        _pixelSize =
+            (_basePixelSize * details.scale).clamp(1.0, 100.0);
       });
     }
   }
@@ -85,49 +120,83 @@ class CanvasWidgetState extends State<CanvasWidget> {
     if (event is PointerScrollEvent) {
       setState(() {
         _pixelSize =
-            (_pixelSize + event.scrollDelta.dy.sign * -2).clamp(10.0, 40.0);
+            (_pixelSize + event.scrollDelta.dy.sign * -2).clamp(1.0, 100.0);
       });
     }
   }
 
-  void _onScaleStart(ScaleStartDetails details) {
-    _basePixelSize = _pixelSize;
-  }
+  // مداد دقیق: فقط با یک کلیک (بدون نیاز به چندبار کلیک)
+  void _onTapUp(TapUpDetails details) {
+    if (!_pencilMode) return; // فقط وقتی مداد فعال است کلیک کنیم
 
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    if (details.pointerCount == 1) {
-      _drawAtPosition(details.localFocalPoint);
-    } else {
+    final localPos = details.localPosition;
+    final double gridX = (localPos.dx - _panOffset.dx) / _pixelSize;
+    final double gridY = (localPos.dy - _panOffset.dy) / _pixelSize;
+    final int x = gridX.floor();
+    final int y = gridY.floor();
+
+    if (x >= 0 && x < pixelData.width && y >= 0 && y < pixelData.height) {
       setState(() {
-        _pixelSize =
-            (_basePixelSize * details.scale).clamp(10.0, 40.0);
+        bool current = pixelData.getPixel(x, y);
+        pixelData.setPixel(x, y, !current);
       });
     }
+  }
+
+  void setPencilMode(bool active) {
+    setState(() {
+      _pencilMode = active;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final canvasWidth = grid.width * _pixelSize;
-    final canvasHeight = grid.height * _pixelSize;
+    final gridWidth = pixelData.width * _pixelSize;
+    final gridHeight = pixelData.height * _pixelSize;
 
-    return Listener(
-      onPointerSignal: _handleScroll,
-      child: GestureDetector(
-        onScaleStart: _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade700, width: 2),
-          ),
-          child: RepaintBoundary(
-            key: _repaintKey,
-            child: CustomPaint(
-              size: Size(canvasWidth, canvasHeight),
-              painter: PixelPainter(grid: grid, pixelSize: _pixelSize),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _lastConstraints = constraints;
+
+        if (_needsFit) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _needsFit = false;
+            fitToView();
+          });
+        }
+
+        final visibleRect = Rect.fromLTRB(
+          -_panOffset.dx / _pixelSize,
+          -_panOffset.dy / _pixelSize,
+          (constraints.maxWidth - _panOffset.dx) / _pixelSize,
+          (constraints.maxHeight - _panOffset.dy) / _pixelSize,
+        );
+
+        return Listener(
+          onPointerSignal: _handleScroll,
+          child: GestureDetector(
+            onTapUp: _onTapUp,
+            onScaleStart: _onScaleStart,
+            onScaleUpdate: _onScaleUpdate,
+            child: ClipRect(
+              child: Transform.translate(
+                offset: _panOffset,
+                child: RepaintBoundary(
+                  key: _repaintKey,
+                  child: CustomPaint(
+                    size: Size(gridWidth, gridHeight),
+                    painter: PixelPainter(
+                      data: pixelData,
+                      pixelSize: _pixelSize,
+                      visibleGridRect: visibleRect,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

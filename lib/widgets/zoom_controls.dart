@@ -4,12 +4,14 @@ class ZoomControls extends StatelessWidget {
   final double currentPixelSize;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
+  final VoidCallback onFit; // جدید
 
   const ZoomControls({
     super.key,
     required this.currentPixelSize,
     required this.onZoomIn,
     required this.onZoomOut,
+    required this.onFit,
   });
 
   String get _zoomPercentage =>
@@ -33,6 +35,12 @@ class ZoomControls extends StatelessWidget {
           tooltip: 'بزرگ‌نمایی',
           icon: const Icon(Icons.zoom_in, color: Colors.white),
           onPressed: onZoomIn,
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          tooltip: 'تناسب با صفحه',
+          icon: const Icon(Icons.fit_screen, color: Colors.white70),
+          onPressed: onFit,
         ),
       ],
     );

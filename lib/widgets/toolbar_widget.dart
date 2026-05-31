@@ -3,13 +3,17 @@ import 'package:flutter/material.dart';
 class ToolbarWidget extends StatelessWidget {
   final VoidCallback onClear;
   final VoidCallback onSave;
-  final VoidCallback onOpen; // جدید
+  final VoidCallback onOpen;
+  final VoidCallback onTogglePencil;
+  final bool isPencilActive;
 
   const ToolbarWidget({
     super.key,
     required this.onClear,
     required this.onSave,
     required this.onOpen,
+    required this.onTogglePencil,
+    required this.isPencilActive,
   });
 
   @override
@@ -32,9 +36,19 @@ class ToolbarWidget extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           IconButton(
-            tooltip: 'ذخیره تصویر (EP)',
+            tooltip: 'ذخیره فایل EP',
             icon: const Icon(Icons.save_alt, color: Colors.white),
             onPressed: onSave,
+          ),
+          const SizedBox(width: 8),
+          // دکمه مداد
+          IconButton(
+            tooltip: isPencilActive ? 'مداد فعال است' : 'مداد غیرفعال',
+            icon: Icon(
+              isPencilActive ? Icons.edit : Icons.edit_off,
+              color: isPencilActive ? Colors.yellow : Colors.white54,
+            ),
+            onPressed: onTogglePencil,
           ),
           const Spacer(),
           const Text(

@@ -1,19 +1,31 @@
 import 'package:flutter/material.dart';
-import '../models/pixel_grid.dart';
+import '../models/ep_pixel_data.dart';
 
 class PixelPainter extends CustomPainter {
-  final PixelGrid grid;
+  final EpPixelData data;
   final double pixelSize;
+  final Rect visibleGridRect; // ناحیه‌ی قابل مشاهده (در مختصات شبکه)
 
-  PixelPainter({required this.grid, this.pixelSize = 20.0});
+  PixelPainter({
+    required this.data,
+    required this.pixelSize,
+    required this.visibleGridRect,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..style = PaintingStyle.fill;
 
-    for (int y = 0; y < grid.height; y++) {
-      for (int x = 0; x < grid.width; x++) {
-        paint.color = grid.getPixel(x, y);
+    // محدوده‌ی پیکسل‌ها را محاسبه می‌کنیم
+    int startX = visibleGridRect.left.floor().clamp(0, data.width);
+    int endX = visibleGridRect.right.ceil().clamp(0, data.width);
+    int startY = visibleGridRect.top.floor().clamp(0, data.height);
+    int endY = visibleGridRect.bottom.ceil().clamp(0, data.height);
+
+    for (int y = startY; y < endY; y++) {
+      for (int x = startX; x < endX; x++) {
+        bool isBlack = data.getPixel(x, y);
+        paint.color = isBlack ? Colors.black : Colors.white;
         canvas.drawRect(
           Rect.fromLTWH(x * pixelSize, y * pixelSize, pixelSize, pixelSize),
           paint,
@@ -21,38 +33,38 @@ class PixelPainter extends CustomPainter {
       }
     }
 
-    // خطوط جدا کننده
-    final borderPaint = Paint()
+    // خطوط شبکه (فقط در محدوده‌ی دید)
+    final gridPaint = Paint()
       ..style = PaintingStyle.stroke
       ..color = Colors.grey.shade600
-      ..strokeWidth = 1.2;
+      ..strokeWidth = 0.8;
 
-    for (int y = 0; y <= grid.height; y++) {
+    for (int y = startY; y <= endY; y++) {
       canvas.drawLine(
-        Offset(0, y * pixelSize),
-        Offset(grid.width * pixelSize, y * pixelSize),
-        borderPaint,
+        Offset(startX * pixelSize, y * pixelSize),
+        Offset(endX * pixelSize, y * pixelSize),
+        gridPaint,
       );
     }
-    for (int x = 0; x <= grid.width; x++) {
+    for (int x = startX; x <= endX; x++) {
       canvas.drawLine(
-        Offset(x * pixelSize, 0),
-        Offset(x * pixelSize, grid.height * pixelSize),
-        borderPaint,
+        Offset(x * pixelSize, startY * pixelSize),
+        Offset(x * pixelSize, endY * pixelSize),
+        gridPaint,
       );
     }
 
-    // کادر دور کل شبکه
+    // کادر بیرونی (همیشه برای کل تصویر)
     final outlinePaint = Paint()
       ..style = PaintingStyle.stroke
       ..color = Colors.black
       ..strokeWidth = 2.0;
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, grid.width * pixelSize, grid.height * pixelSize),
+      Rect.fromLTWH(0, 0, data.width * pixelSize, data.height * pixelSize),
       outlinePaint,
     );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant PixelPainter oldDelegate) => true;
 }
